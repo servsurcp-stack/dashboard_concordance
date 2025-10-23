@@ -186,7 +186,6 @@ pourcent_anomalies_site = filtered_df.groupby('agences_antennes').apply(
     lambda x: (len(x[x['anomalie'] == 'OUI']) / len(x) * 100) if len(x) > 0 else 0
 ).reset_index()
 pourcent_anomalies_site.columns = ['Site', '% Anomalies']
-# Trier par pourcentage d'anomalies décroissant pour afficher du plus élevé à gauche
 pourcent_anomalies_site = pourcent_anomalies_site.sort_values('% Anomalies', ascending=False).reset_index(drop=True)
 fig_pourcent = px.bar(pourcent_anomalies_site, x='Site', y='% Anomalies', title="% Anomalies par Site")
 st.plotly_chart(fig_pourcent, use_container_width=True)
@@ -196,37 +195,28 @@ if 'jour' in filtered_df.columns:
     anomalies_par_jour = filtered_df.groupby('jour').apply(
         lambda x: (len(x[x['anomalie'] == 'OUI']) / len(x) * 100) if len(x) > 0 else 0
     ).reset_index(name="% Anomalies")
-    # S'assurer du tri chronologique des jours.
-    # Cas 1: noms de jours en français
     jours_fr = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']
     jours_en = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     anomalies_par_jour['jour'] = anomalies_par_jour['jour'].astype(str)
 
     def compute_sort_key(val):
         v = val.strip()
-        # FR exact match
         if v in jours_fr:
             return jours_fr.index(v)
-        # EN exact match
         if v in jours_en:
             return jours_en.index(v)
-        # FR lower-case variants
         v_cap = v.capitalize()
         if v_cap in jours_fr:
             return jours_fr.index(v_cap)
-        # Try parse as date
         try:
             dt = pd.to_datetime(v, dayfirst=True, errors='coerce')
             if not pd.isna(dt):
-                # use weekday (Monday=0)
                 return dt.weekday()
         except Exception:
             pass
-        # fallback: large number to send to end, but keep stable order via original index
         return 999
 
     anomalies_par_jour['jour_sort'] = anomalies_par_jour['jour'].apply(compute_sort_key)
-    # Conserver ordre stable: on trie par jour_sort puis par jour
     anomalies_par_jour = anomalies_par_jour.sort_values(['jour_sort', 'jour'])
     anomalies_par_jour = anomalies_par_jour.drop(columns=['jour_sort']).reset_index(drop=True)
 
@@ -243,6 +233,101 @@ if 'jour' in filtered_df.columns:
     st.plotly_chart(fig_anom_jour, use_container_width=True)
     st.dataframe(anomalies_par_jour)
 
+# Nouvelle Section: Visualisation Temporelle des Anomalies
+st.header("Visualisation Temporelle des Anomalies")
+
+# Préparer les données pour la visualisation temporelle
+# Par heure
+filtered_df['heure'] = filtered_df['heure_de_debut'].dt.hour
+anomalies_par_heure = filtered_df[filtered_df['anomalie'] == 'OUI'].groupby('heure').size().reset_index(name='Nb Anomalies')
+controles_par_heure = filtered_df.groupby('heure').size().reset_index(name='Nb Contrôles')
+df_heure = pd.merge(controles_par_heure, anomalies_par_heure, on='heure', how='left').fillna(0)
+df_heure['% Anomalies'] = (df_heure['Nb Anomalies'] / df_heure['Nb Contrôles'] * 100).round(2)
+
+# Par semaine
+filtered_df['date'] = pd.to_datetime(filtered_df['date'])
+filtered_df['annee_semaine'] = filtered_df['date'].dt.strftime('%Y-W%W')
+anomalies_par_semaine = filtered_df[filtered_df['anomalie'] == 'OUI'].groupby('annee_semaine').size().reset_index(name='Nb Anomalies')
+controles_par_semaine = filtered_df.groupby('annee_semaine').size().reset_index(name='Nb Contrôles')
+df_semaine = pd.merge(controles_par_semaine, anomalies_par_semaine, on='annee_semaine', how='left').fillna(0)
+df_semaine['% Anomalies'] = (df_semaine['Nb Anomalies'] / df_semaine['Nb Contrôles'] * 100).round(2)
+
+# Graphique par heure
+st.subheader("Évolution par Heure")
+fig_heure = make_subplots(specs=[[{"secondary_y": True}]])
+fig_heure.add_trace(
+    go.Scatter(x=df_heure['heure'], y=df_heure['Nb Contrôles'], name="Nb Contrôles", line=dict(color='blue')),
+    secondary_y=False
+)
+fig_heure.add_trace(
+    go.Scatter(x=df_heure['heure'], y=df_heure['Nb Anomalies'], name="Nb Anomalies", line=dict(color='red')),
+    secondary_y=False
+)
+fig_heure.add_trace(
+    go.Scatter(x=df_heure['heure'], y=df_heure['% Anomalies'], name="% Anomalies", line=dict(color='green', dash='dash')),
+    secondary_y=True
+)
+# Amélioration de la lisibilité
+fig_heure.update_layout(
+    title="Évolution des Contrôles et Anomalies par Heure",
+    xaxis_title="Heure de la Journée",
+    yaxis_title="Nombre de Contrôles/Anomalies",
+    legend=dict(x=0, y=1.1, orientation="h", font=dict(size=12)),
+    font=dict(size=14),
+    margin=dict(l=50, r=50, t=100, b=50),
+    xaxis=dict(tickfont=dict(size=12)),
+    yaxis=dict(tickfont=dict(size=12))
+)
+fig_heure.update_yaxes(title_text="% Anomalies", secondary_y=True, tickfont=dict(size=12))
+# Annotation pour le pic d'anomalies
+if not df_heure['Nb Anomalies'].empty:
+    max_anom_heure = df_heure.loc[df_heure['Nb Anomalies'].idxmax()]
+    fig_heure.add_annotation(
+        x=max_anom_heure['heure'], y=max_anom_heure['Nb Anomalies'],
+        text=f"Pic: {int(max_anom_heure['Nb Anomalies'])} anomalies",
+        showarrow=True, arrowhead=1, ax=20, ay=-30, font=dict(size=12)
+    )
+st.plotly_chart(fig_heure, use_container_width=True)
+st.dataframe(df_heure)
+
+# Graphique par semaine
+st.subheader("Évolution par Semaine")
+fig_semaine = make_subplots(specs=[[{"secondary_y": True}]])
+fig_semaine.add_trace(
+    go.Scatter(x=df_semaine['annee_semaine'], y=df_semaine['Nb Contrôles'], name="Nb Contrôles", line=dict(color='blue')),
+    secondary_y=False
+)
+fig_semaine.add_trace(
+    go.Scatter(x=df_semaine['annee_semaine'], y=df_semaine['Nb Anomalies'], name="Nb Anomalies", line=dict(color='red')),
+    secondary_y=False
+)
+fig_semaine.add_trace(
+    go.Scatter(x=df_semaine['annee_semaine'], y=df_semaine['% Anomalies'], name="% Anomalies", line=dict(color='green', dash='dash')),
+    secondary_y=True
+)
+# Amélioration de la lisibilité
+fig_semaine.update_layout(
+    title="Évolution des Contrôles et Anomalies par Semaine",
+    xaxis_title="Semaine (Année-Semaine)",
+    yaxis_title="Nombre de Contrôles/Anomalies",
+    legend=dict(x=0, y=1.1, orientation="h", font=dict(size=12)),
+    font=dict(size=14),
+    margin=dict(l=50, r=50, t=100, b=50),
+    xaxis=dict(tickfont=dict(size=12), tickangle=45),
+    yaxis=dict(tickfont=dict(size=12))
+)
+fig_semaine.update_yaxes(title_text="% Anomalies", secondary_y=True, tickfont=dict(size=12))
+# Annotation pour le pic d'anomalies
+if not df_semaine['Nb Anomalies'].empty:
+    max_anom_semaine = df_semaine.loc[df_semaine['Nb Anomalies'].idxmax()]
+    fig_semaine.add_annotation(
+        x=max_anom_semaine['annee_semaine'], y=max_anom_semaine['Nb Anomalies'],
+        text=f"Pic: {int(max_anom_semaine['Nb Anomalies'])} anomalies",
+        showarrow=True, arrowhead=1, ax=20, ay=-30, font=dict(size=12)
+    )
+st.plotly_chart(fig_semaine, use_container_width=True)
+st.dataframe(df_semaine)
+
 # Section 5: Types de Vérifications et Anomalies Spécifiques
 st.header("Types de Vérifications et Anomalies")
 col_verif, col_anomalie = st.columns(2)
@@ -256,40 +341,48 @@ with col_verif:
 
 # Anomalies par Type (Chargement, Véhicule, Suivi)
 with col_anomalie:
-    # Sous-figures pour les 3 types d'anomalies
     fig_anom = make_subplots(rows=1, cols=3, subplot_titles=('Anomalies Chargement', 'Anomalies Véhicule', 'Anomalies Suivi'))
-
-    # Anomalies Chargement
-    anom_charg = filtered_df['anomalie_de_chargement'].value_counts().head(5)
+    # Anomalies Chargement - exclure valeurs nulles/None/vide
+    if 'anomalie_de_chargement' in filtered_df.columns:
+        anom_charg = filtered_df['anomalie_de_chargement'].dropna().astype(str)
+        anom_charg = anom_charg[anom_charg.str.strip().str.lower() != 'none']
+        anom_charg = anom_charg[anom_charg.str.strip() != '']
+        anom_charg = anom_charg.value_counts().head(5)
+    else:
+        anom_charg = pd.Series(dtype=int)
     fig_anom.add_trace(go.Bar(x=anom_charg.index, y=anom_charg.values), row=1, col=1)
 
-    # Anomalies Véhicule
-    anom_veh = filtered_df['anomalie_de_vehicule'].value_counts().head(5)
+    # Anomalies Véhicule - exclure valeurs nulles/None/vide
+    if 'anomalie_de_vehicule' in filtered_df.columns:
+        anom_veh = filtered_df['anomalie_de_vehicule'].dropna().astype(str)
+        anom_veh = anom_veh[anom_veh.str.strip().str.lower() != 'none']
+        anom_veh = anom_veh[anom_veh.str.strip() != '']
+        anom_veh = anom_veh.value_counts().head(5)
+    else:
+        anom_veh = pd.Series(dtype=int)
     fig_anom.add_trace(go.Bar(x=anom_veh.index, y=anom_veh.values), row=1, col=2)
 
-    # Anomalies Suivi
-    anom_suivi = filtered_df['anomalie_suivi_de_tournee'].value_counts().head(5)
+    # Anomalies Suivi - exclure valeurs nulles/None/vide
+    if 'anomalie_suivi_de_tournee' in filtered_df.columns:
+        anom_suivi = filtered_df['anomalie_suivi_de_tournee'].dropna().astype(str)
+        anom_suivi = anom_suivi[anom_suivi.str.strip().str.lower() != 'none']
+        anom_suivi = anom_suivi[anom_suivi.str.strip() != '']
+        anom_suivi = anom_suivi.value_counts().head(5)
+    else:
+        anom_suivi = pd.Series(dtype=int)
     fig_anom.add_trace(go.Bar(x=anom_suivi.index, y=anom_suivi.values), row=1, col=3)
-
     fig_anom.update_layout(height=400, title_text="Top Anomalies par Catégorie")
     st.plotly_chart(fig_anom, use_container_width=True)
 
 # Section 6: Anomalies CP vs DSP
 st.header("Anomalies par Appartenance (CP / DSP)")
-
-# Effectuer le groupby et unstack pour le volume des anomalies
 anom_cp_dsp = filtered_df.groupby(['appartenance_du_conducteur', 'anomalie']).size().unstack(fill_value=0)
-# S'assurer que les colonnes 'OUI' et 'NON' existent
 for col in ['OUI', 'NON']:
     if col not in anom_cp_dsp.columns:
         anom_cp_dsp[col] = 0
-
-# Calculer les pourcentages d'anomalies par appartenance
 pourcent_anomalies = filtered_df.groupby('appartenance_du_conducteur').apply(
     lambda x: (len(x[x['anomalie'] == 'OUI']) / len(x) * 100) if len(x) > 0 else 0
 ).reset_index(name='% Anomalies')
-
-# Créer le graphique pour le volume (barre empilée)
 fig_cp_dsp = px.bar(
     anom_cp_dsp.reset_index(),
     x='appartenance_du_conducteur',
@@ -298,40 +391,47 @@ fig_cp_dsp = px.bar(
     title="Anomalies CP vs DSP (Volume)",
     labels={'value': 'Nombre de Contrôles', 'appartenance_du_conducteur': 'Appartenance'}
 )
-
-# Afficher le graphique du volume
 st.plotly_chart(fig_cp_dsp, use_container_width=True)
-
-# Afficher les pourcentages d'anomalies
 st.subheader("Pourcentage d'Anomalies par Appartenance")
-# Créer un graphique en barres pour les pourcentages
 fig_pourcent_anomalies = px.bar(
     pourcent_anomalies,
     x='appartenance_du_conducteur',
     y='% Anomalies',
     title="% d'Anomalies par Appartenance",
     labels={'appartenance_du_conducteur': 'Appartenance', '% Anomalies': 'Pourcentage d\'Anomalies'},
-    text='% Anomalies'  # Afficher les valeurs sur les barres
+    text='% Anomalies'
 )
 fig_pourcent_anomalies.update_traces(texttemplate='%{text:.2f}%', textposition='auto')
 st.plotly_chart(fig_pourcent_anomalies, use_container_width=True)
-
-# Afficher un tableau récapitulatif des pourcentages
 st.dataframe(pourcent_anomalies)
 
-# Nouvelle Section 7: Analyse du Top 20 des Tournées avec le plus d'Anomalies Positives
+# Section 7: Analyse du Top 20 des Tournées avec le plus d'Anomalies Positives
 st.header("Analyse du Top 20 des Tournées avec le plus d'Anomalies Positives")
-
-# Calcul du top 20
 top_tournees_anomalies = filtered_df[filtered_df['anomalie'] == 'OUI'].groupby('tournee').size().reset_index(name='Nb Anomalies')
-top_tournees_anomalies = top_tournees_anomalies.sort_values('Nb Anomalies', ascending=False).head(20)
-top_tournees_anomalies['tournee'] = top_tournees_anomalies['tournee'].astype(str)  # Pour affichage
+# Calculer le nombre total de contrôles par tournée pour obtenir le pourcentage
+total_par_tournee = filtered_df.groupby('tournee').size().reset_index(name='Nb Contrôles')
+# Joindre et calculer le pourcentage
+top_tournees = pd.merge(top_tournees_anomalies, total_par_tournee, on='tournee', how='left')
+top_tournees['% Anomalies'] = (top_tournees['Nb Anomalies'] / top_tournees['Nb Contrôles'] * 100).round(2)
+top_tournees = top_tournees.sort_values('Nb Anomalies', ascending=False).head(20)
+top_tournees['tournee'] = top_tournees['tournee'].astype(str)
+# Calculer les agences/antennes concernées par tournée (liste unique)
+agences_par_tournee = filtered_df.groupby('tournee')['agences_antennes'].unique().reset_index()
+def join_agences(arr):
+    try:
+        # convertir en liste de str et joindre
+        lst = [str(x) for x in arr if pd.notna(x)]
+        return '; '.join(sorted(set(lst)))
+    except Exception:
+        return ''
+agences_par_tournee['Agences'] = agences_par_tournee['agences_antennes'].apply(join_agences)
+agences_par_tournee = agences_par_tournee.drop(columns=['agences_antennes'])
 
-# Table des données
+# Joindre la colonne Agences au top_tournees
+top_tournees = pd.merge(top_tournees, agences_par_tournee, on='tournee', how='left')
+
 st.subheader("Détails du Top 20")
-st.dataframe(top_tournees_anomalies)
-
-# Petite analyse textuelle
+st.dataframe(top_tournees)
 if not top_tournees_anomalies.empty:
     max_anom = top_tournees_anomalies.iloc[0]
     st.write(f"La tournée avec le plus d'anomalies est la {max_anom['tournee']} avec {max_anom['Nb Anomalies']} anomalies.")
