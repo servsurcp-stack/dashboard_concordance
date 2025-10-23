@@ -55,10 +55,62 @@ df = load_data()
 
 # Sidebar pour filtres
 st.sidebar.title("Filtres")
-selected_agences = st.sidebar.multiselect("Sélectionner les Agences/Antennes", options=sorted(df['agences_antennes'].unique()), default=sorted(df['agences_antennes'].unique()))
-selected_jours = st.sidebar.multiselect("Sélectionner les Jours", options=sorted(df['jour'].unique()), default=sorted(df['jour'].unique()))
-selected_type_verif = st.sidebar.multiselect("Type de Vérification", options=df['type_de_verification'].unique(), default=df['type_de_verification'].unique())
-selected_appartenance = st.sidebar.multiselect("Appartenance du Conducteur", options=df['appartenance_du_conducteur'].unique(), default=df['appartenance_du_conducteur'].unique())
+
+# Préparer les valeurs par défaut
+default_agences = sorted(df['agences_antennes'].unique()) if 'agences_antennes' in df.columns else []
+default_jours = sorted(df['jour'].unique()) if 'jour' in df.columns else []
+default_type_verif = list(df['type_de_verification'].unique()) if 'type_de_verification' in df.columns else []
+default_appartenance = list(df['appartenance_du_conducteur'].unique()) if 'appartenance_du_conducteur' in df.columns else []
+
+# Initialiser session_state pour les filtres si non présents (permet le reset)
+if 'selected_agences' not in st.session_state:
+    st.session_state['selected_agences'] = default_agences
+if 'selected_jours' not in st.session_state:
+    st.session_state['selected_jours'] = default_jours
+if 'selected_type_verif' not in st.session_state:
+    st.session_state['selected_type_verif'] = default_type_verif
+if 'selected_appartenance' not in st.session_state:
+    st.session_state['selected_appartenance'] = default_appartenance
+
+def reset_filters():
+    """Remettre les filtres à leurs valeurs par défaut."""
+    st.session_state['selected_agences'] = default_agences
+    st.session_state['selected_jours'] = default_jours
+    st.session_state['selected_type_verif'] = default_type_verif
+    st.session_state['selected_appartenance'] = default_appartenance
+
+# Bouton pour réinitialiser
+if st.sidebar.button("Réinitialiser les filtres"):
+    reset_filters()
+
+# Widgets liés à session_state
+selected_agences = st.sidebar.multiselect(
+    "Sélectionner les Agences/Antennes",
+    options=default_agences,
+    default=st.session_state.get('selected_agences', default_agences),
+    key='selected_agences'
+)
+
+selected_jours = st.sidebar.multiselect(
+    "Sélectionner les Jours",
+    options=default_jours,
+    default=st.session_state.get('selected_jours', default_jours),
+    key='selected_jours'
+)
+
+selected_type_verif = st.sidebar.multiselect(
+    "Type de Vérification",
+    options=default_type_verif,
+    default=st.session_state.get('selected_type_verif', default_type_verif),
+    key='selected_type_verif'
+)
+
+selected_appartenance = st.sidebar.multiselect(
+    "Appartenance du Conducteur",
+    options=default_appartenance,
+    default=st.session_state.get('selected_appartenance', default_appartenance),
+    key='selected_appartenance'
+)
 
 # Filtrer les données
 filtered_df = df[
@@ -134,8 +186,62 @@ pourcent_anomalies_site = filtered_df.groupby('agences_antennes').apply(
     lambda x: (len(x[x['anomalie'] == 'OUI']) / len(x) * 100) if len(x) > 0 else 0
 ).reset_index()
 pourcent_anomalies_site.columns = ['Site', '% Anomalies']
+# Trier par pourcentage d'anomalies décroissant pour afficher du plus élevé à gauche
+pourcent_anomalies_site = pourcent_anomalies_site.sort_values('% Anomalies', ascending=False).reset_index(drop=True)
 fig_pourcent = px.bar(pourcent_anomalies_site, x='Site', y='% Anomalies', title="% Anomalies par Site")
 st.plotly_chart(fig_pourcent, use_container_width=True)
+
+# % d'Anomalies par Jour de la semaine
+if 'jour' in filtered_df.columns:
+    anomalies_par_jour = filtered_df.groupby('jour').apply(
+        lambda x: (len(x[x['anomalie'] == 'OUI']) / len(x) * 100) if len(x) > 0 else 0
+    ).reset_index(name="% Anomalies")
+    # S'assurer du tri chronologique des jours.
+    # Cas 1: noms de jours en français
+    jours_fr = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']
+    jours_en = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    anomalies_par_jour['jour'] = anomalies_par_jour['jour'].astype(str)
+
+    def compute_sort_key(val):
+        v = val.strip()
+        # FR exact match
+        if v in jours_fr:
+            return jours_fr.index(v)
+        # EN exact match
+        if v in jours_en:
+            return jours_en.index(v)
+        # FR lower-case variants
+        v_cap = v.capitalize()
+        if v_cap in jours_fr:
+            return jours_fr.index(v_cap)
+        # Try parse as date
+        try:
+            dt = pd.to_datetime(v, dayfirst=True, errors='coerce')
+            if not pd.isna(dt):
+                # use weekday (Monday=0)
+                return dt.weekday()
+        except Exception:
+            pass
+        # fallback: large number to send to end, but keep stable order via original index
+        return 999
+
+    anomalies_par_jour['jour_sort'] = anomalies_par_jour['jour'].apply(compute_sort_key)
+    # Conserver ordre stable: on trie par jour_sort puis par jour
+    anomalies_par_jour = anomalies_par_jour.sort_values(['jour_sort', 'jour'])
+    anomalies_par_jour = anomalies_par_jour.drop(columns=['jour_sort']).reset_index(drop=True)
+
+    st.subheader("% d'Anomalies par Jour")
+    fig_anom_jour = px.bar(
+        anomalies_par_jour,
+        x='jour',
+        y='% Anomalies',
+        title="% d'Anomalies par Jour",
+        labels={'jour': 'Jour', '% Anomalies': 'Pourcentage d\'Anomalies'},
+        text='% Anomalies'
+    )
+    fig_anom_jour.update_traces(texttemplate='%{text:.2f}%', textposition='auto')
+    st.plotly_chart(fig_anom_jour, use_container_width=True)
+    st.dataframe(anomalies_par_jour)
 
 # Section 5: Types de Vérifications et Anomalies Spécifiques
 st.header("Types de Vérifications et Anomalies")
