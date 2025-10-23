@@ -9,39 +9,63 @@ st.set_page_config(page_title="Dashboard EDA Vérifications Contrôles", layout=
 
 # Chargement des données
 @st.cache_data
-def load_data():
-    df = pd.read_csv("verif_concordance1.csv")
-    # Nettoyage similaire au notebook
-    df['Date'] = pd.to_datetime(df['Date'])
-    df['jour'] = df['Date'].dt.day_name()  # En français si besoin: mapper à Jeudi, etc.
-    jour_map = {
-        'Monday': 'Lundi',
-        'Tuesday': 'Mardi',
-        'Wednesday': 'Mercredi',
-        'Thursday': 'Jeudi',
-        'Friday': 'Vendredi',
-        'Saturday': 'Samedi',
-        'Sunday': 'Dimanche'
-    }
-    df['jour'] = df['jour'].map(jour_map)
-    df['heure_arrondie'] = pd.to_datetime(df['Heure de début']).dt.round('30min').dt.time
+def load_data(query="SELECT * FROM db_verification_concordance;"):
+    conn = st.connection("postgresql", type="sql")
+    df = conn.query(query, ttl="10m")
+    # Normalisations utiles
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    if "heure_de_debut" in df.columns:
+        df["heure_de_debut"] = pd.to_datetime(df["heure_de_debut"], errors="coerce")
+    if "heure_de_fin" in df.columns:
+        df["heure_de_fin"] = pd.to_datetime(df["heure_de_fin"], errors="coerce")
+    if "lieu_de_la_verification" in df.columns:
+        df["lieu_de_la_verification"] = df["lieu_de_la_verification"].astype(str)
+    if "appartenance_du_conducteur" in df.columns:
+        df["appartenance_du_conducteur"] = df["appartenance_du_conducteur"].astype(str)
+    if "tournee_pda_nom_societe" in df.columns:
+        df["tournee_pda_nom_societe"] = df["tournee_pda_nom_societe"].astype(str)
+    if "type_de_verification" in df.columns:
+        df["type_de_verification"] = df["type_de_verification"].astype(str)
+    if "region" in df.columns:
+        df["region"] = df["region"].astype(str)
+    if "anomalie" in df.columns:
+        df["anomalie"] = df["anomalie"].astype(str)
+    if "anomalie_de_chargement" in df.columns:
+        df["anomalie_de_chargement"] = df["anomalie_de_chargement"].astype(str, errors="ignore")
+    if "anomalie_de_vehicule" in df.columns:
+        df["anomalie_de_vehicule"] = df["anomalie_de_vehicule"].astype(str, errors="ignore")
+    if "anomalie_suivi_de_tournee" in df.columns:
+        df["anomalie_suivi_de_tournee"] = df["anomalie_suivi_de_tournee"].astype(str, errors="ignore")
+    if "agences_antennes" in df.columns:
+        df["agences_antennes"] = df["agences_antennes"].astype(str)
+    if "tournee" in df.columns:
+        df["tournee"] = df["tournee"].astype(str, errors="ignore")
+    if "pda" in df.columns:
+        df["pda"] = df["pda"].astype(str, errors="ignore")
+    if "nom_de_la_societe" in df.columns:
+        df["nom_de_la_societe"] = df["nom_de_la_societe"].astype(str, errors="ignore")
+    if "jour" in df.columns:
+        df["jour"] = df["jour"].astype(str)
+    if "heure_arrondie" in df.columns:
+        df["heure_arrondie"] = df["heure_arrondie"].astype(str)
     return df
 
 df = load_data()
 
 # Sidebar pour filtres
 st.sidebar.title("Filtres")
-selected_agences = st.sidebar.multiselect("Sélectionner les Agences/Antennes", options=sorted(df['AGENCES/ANTENNES'].unique()), default=sorted(df['AGENCES/ANTENNES'].unique()))
+selected_agences = st.sidebar.multiselect("Sélectionner les Agences/Antennes", options=sorted(df['agences_antennes'].unique()), default=sorted(df['agences_antennes'].unique()))
 selected_jours = st.sidebar.multiselect("Sélectionner les Jours", options=sorted(df['jour'].unique()), default=sorted(df['jour'].unique()))
-selected_type_verif = st.sidebar.multiselect("Type de Vérification", options=df['Type de vérification'].unique(), default=df['Type de vérification'].unique())
-selected_appartenance = st.sidebar.multiselect("Appartenance du Conducteur", options=df['Appartenance du conducteur'].unique(), default=df['Appartenance du conducteur'].unique())
+selected_type_verif = st.sidebar.multiselect("Type de Vérification", options=df['type_de_verification'].unique(), default=df['type_de_verification'].unique())
+selected_appartenance = st.sidebar.multiselect("Appartenance du Conducteur", options=df['appartenance_du_conducteur'].unique(), default=df['appartenance_du_conducteur'].unique())
 
 # Filtrer les données
 filtered_df = df[
-    (df['AGENCES/ANTENNES'].isin(selected_agences)) &
+    (df['agences_antennes'].isin(selected_agences)) &
     (df['jour'].isin(selected_jours)) &
-    (df['Type de vérification'].isin(selected_type_verif)) &
-    (df['Appartenance du conducteur'].isin(selected_appartenance))
+    (df['type_de_verification'].isin(selected_type_verif)) &
+    (df['appartenance_du_conducteur'].isin(selected_appartenance))
 ]
 
 # Titre principal
@@ -51,10 +75,10 @@ st.title("Dashboard EDA - Vérifications de Contrôles")
 st.header("Métriques Globales")
 col1, col2, col3, col4 = st.columns(4)
 total_controles = len(filtered_df)
-total_anomalies = len(filtered_df[filtered_df['ANOMALIE'] == 'Oui'])
+total_anomalies = len(filtered_df[filtered_df['anomalie'] == 'OUI'])
 pourcent_anomalies = (total_anomalies / total_controles * 100) if total_controles > 0 else 0
-nb_cp = len(filtered_df[(filtered_df['Appartenance du conducteur'] == 'COLIS PRIVE') | (filtered_df['Appartenance du conducteur'] == 'COLIS PRIVE')])
-nb_dsp = len(filtered_df[filtered_df['Appartenance du conducteur'] == 'DSP'])
+nb_cp = len(filtered_df[(filtered_df['appartenance_du_conducteur'] == 'COLIS PRIVE') | (filtered_df['appartenance_du_conducteur'] == 'COLIS PRIVE')])
+nb_dsp = len(filtered_df[filtered_df['appartenance_du_conducteur'] == 'DSP'])
 
 col1.metric("Total Contrôles", total_controles)
 col2.metric("Total Anomalies", total_anomalies)
@@ -63,7 +87,7 @@ col4.metric("CP vs DSP", f"{nb_cp} CP / {nb_dsp} DSP")
 
 # Section 2: Nombre de Contrôles par Site
 st.header("Nombre de Contrôles par Site")
-controles_par_site = filtered_df['AGENCES/ANTENNES'].value_counts().reset_index()
+controles_par_site = filtered_df['agences_antennes'].value_counts().reset_index()
 controles_par_site.columns = ['Site', 'Nombre de Contrôles']
 fig_controles_site = px.bar(controles_par_site, x='Site', y='Nombre de Contrôles', title="Contrôles par Site")
 st.plotly_chart(fig_controles_site, use_container_width=True)
@@ -74,7 +98,7 @@ col_jour, col_heure = st.columns(2)
 
 # Par Jour
 with col_jour:
-    controles_par_jour_site = filtered_df.groupby(['AGENCES/ANTENNES', 'jour']).size().unstack().fillna(0)
+    controles_par_jour_site = filtered_df.groupby(['agences_antennes', 'jour']).size().unstack().fillna(0)
     fig_jour = go.Figure(data=go.Heatmap(
         z=controles_par_jour_site.values,
         x=controles_par_jour_site.columns,
@@ -86,7 +110,7 @@ with col_jour:
 
 # Par Heure
 with col_heure:
-    controles_par_heure_site = filtered_df.groupby(['AGENCES/ANTENNES', 'heure_arrondie']).size().unstack().fillna(0)
+    controles_par_heure_site = filtered_df.groupby(['agences_antennes', 'heure_arrondie']).size().unstack().fillna(0)
     fig_heure = go.Figure(data=go.Heatmap(
         z=controles_par_heure_site.values,
         x=controles_par_heure_site.columns,
@@ -100,14 +124,14 @@ with col_heure:
 st.header("Analyse des Anomalies")
 
 # Classement Sites par Anomalies
-anomalies_par_site = filtered_df[filtered_df['ANOMALIE'] == 'Oui']['AGENCES/ANTENNES'].value_counts().reset_index()
+anomalies_par_site = filtered_df[filtered_df['anomalie'] == 'OUI']['agences_antennes'].value_counts().reset_index()
 anomalies_par_site.columns = ['Site', 'Nombre d\'Anomalies']
 fig_anomalies_site = px.bar(anomalies_par_site, x='Site', y='Nombre d\'Anomalies', title="Classement Sites par Anomalies")
 st.plotly_chart(fig_anomalies_site, use_container_width=True)
 
 # % Anomalies vs Nb Contrôles
-pourcent_anomalies_site = filtered_df.groupby('AGENCES/ANTENNES').apply(
-    lambda x: (len(x[x['ANOMALIE'] == 'Oui']) / len(x) * 100) if len(x) > 0 else 0
+pourcent_anomalies_site = filtered_df.groupby('agences_antennes').apply(
+    lambda x: (len(x[x['anomalie'] == 'OUI']) / len(x) * 100) if len(x) > 0 else 0
 ).reset_index()
 pourcent_anomalies_site.columns = ['Site', '% Anomalies']
 fig_pourcent = px.bar(pourcent_anomalies_site, x='Site', y='% Anomalies', title="% Anomalies par Site")
@@ -119,7 +143,7 @@ col_verif, col_anomalie = st.columns(2)
 
 # Nb Contrôles Avant/Après Chargement
 with col_verif:
-    verif_type = filtered_df['Type de vérification'].value_counts().reset_index()
+    verif_type = filtered_df['type_de_verification'].value_counts().reset_index()
     verif_type.columns = ['Type', 'Nombre']
     fig_verif = px.pie(verif_type, values='Nombre', names='Type', title="Répartition Types de Vérifications")
     st.plotly_chart(fig_verif, use_container_width=True)
@@ -130,33 +154,72 @@ with col_anomalie:
     fig_anom = make_subplots(rows=1, cols=3, subplot_titles=('Anomalies Chargement', 'Anomalies Véhicule', 'Anomalies Suivi'))
 
     # Anomalies Chargement
-    anom_charg = filtered_df['ANOMALIE DE CHARGEMENT'].value_counts().head(5)
+    anom_charg = filtered_df['anomalie_de_chargement'].value_counts().head(5)
     fig_anom.add_trace(go.Bar(x=anom_charg.index, y=anom_charg.values), row=1, col=1)
 
     # Anomalies Véhicule
-    anom_veh = filtered_df['ANOMALIE DE VEHICULE'].value_counts().head(5)
+    anom_veh = filtered_df['anomalie_de_vehicule'].value_counts().head(5)
     fig_anom.add_trace(go.Bar(x=anom_veh.index, y=anom_veh.values), row=1, col=2)
 
     # Anomalies Suivi
-    anom_suivi = filtered_df['ANOMALIE SUIVI DE TOURNEE'].value_counts().head(5)
+    anom_suivi = filtered_df['anomalie_suivi_de_tournee'].value_counts().head(5)
     fig_anom.add_trace(go.Bar(x=anom_suivi.index, y=anom_suivi.values), row=1, col=3)
 
     fig_anom.update_layout(height=400, title_text="Top Anomalies par Catégorie")
     st.plotly_chart(fig_anom, use_container_width=True)
 
-# Section 6: Anomalies CP vs DSP (Délocalisé?)
+# Section 6: Anomalies CP vs DSP
 st.header("Anomalies par Appartenance (CP / DSP)")
-anom_cp_dsp = filtered_df.groupby(['Appartenance du conducteur', 'ANOMALIE']).size().unstack().fillna(0)
-fig_cp_dsp = px.bar(anom_cp_dsp.reset_index(), x='Appartenance du conducteur', y=['Oui', 'Non'], barmode='stack', title="Anomalies CP vs DSP")
+
+# Effectuer le groupby et unstack pour le volume des anomalies
+anom_cp_dsp = filtered_df.groupby(['appartenance_du_conducteur', 'anomalie']).size().unstack(fill_value=0)
+# S'assurer que les colonnes 'OUI' et 'NON' existent
+for col in ['OUI', 'NON']:
+    if col not in anom_cp_dsp.columns:
+        anom_cp_dsp[col] = 0
+
+# Calculer les pourcentages d'anomalies par appartenance
+pourcent_anomalies = filtered_df.groupby('appartenance_du_conducteur').apply(
+    lambda x: (len(x[x['anomalie'] == 'OUI']) / len(x) * 100) if len(x) > 0 else 0
+).reset_index(name='% Anomalies')
+
+# Créer le graphique pour le volume (barre empilée)
+fig_cp_dsp = px.bar(
+    anom_cp_dsp.reset_index(),
+    x='appartenance_du_conducteur',
+    y=['OUI', 'NON'],
+    barmode='stack',
+    title="Anomalies CP vs DSP (Volume)",
+    labels={'value': 'Nombre de Contrôles', 'appartenance_du_conducteur': 'Appartenance'}
+)
+
+# Afficher le graphique du volume
 st.plotly_chart(fig_cp_dsp, use_container_width=True)
+
+# Afficher les pourcentages d'anomalies
+st.subheader("Pourcentage d'Anomalies par Appartenance")
+# Créer un graphique en barres pour les pourcentages
+fig_pourcent_anomalies = px.bar(
+    pourcent_anomalies,
+    x='appartenance_du_conducteur',
+    y='% Anomalies',
+    title="% d'Anomalies par Appartenance",
+    labels={'appartenance_du_conducteur': 'Appartenance', '% Anomalies': 'Pourcentage d\'Anomalies'},
+    text='% Anomalies'  # Afficher les valeurs sur les barres
+)
+fig_pourcent_anomalies.update_traces(texttemplate='%{text:.2f}%', textposition='auto')
+st.plotly_chart(fig_pourcent_anomalies, use_container_width=True)
+
+# Afficher un tableau récapitulatif des pourcentages
+st.dataframe(pourcent_anomalies)
 
 # Nouvelle Section 7: Analyse du Top 20 des Tournées avec le plus d'Anomalies Positives
 st.header("Analyse du Top 20 des Tournées avec le plus d'Anomalies Positives")
 
 # Calcul du top 20
-top_tournees_anomalies = filtered_df[filtered_df['ANOMALIE'] == 'Oui'].groupby('Tournée').size().reset_index(name='Nb Anomalies')
+top_tournees_anomalies = filtered_df[filtered_df['anomalie'] == 'OUI'].groupby('tournee').size().reset_index(name='Nb Anomalies')
 top_tournees_anomalies = top_tournees_anomalies.sort_values('Nb Anomalies', ascending=False).head(20)
-top_tournees_anomalies['Tournée'] = top_tournees_anomalies['Tournée'].astype(str)  # Pour affichage
+top_tournees_anomalies['tournee'] = top_tournees_anomalies['tournee'].astype(str)  # Pour affichage
 
 # Table des données
 st.subheader("Détails du Top 20")
@@ -165,7 +228,7 @@ st.dataframe(top_tournees_anomalies)
 # Petite analyse textuelle
 if not top_tournees_anomalies.empty:
     max_anom = top_tournees_anomalies.iloc[0]
-    st.write(f"La tournée avec le plus d'anomalies est la {max_anom['Tournée']} avec {max_anom['Nb Anomalies']} anomalies.")
+    st.write(f"La tournée avec le plus d'anomalies est la {max_anom['tournee']} avec {max_anom['Nb Anomalies']} anomalies.")
     st.write("Ces tournées représentent les zones prioritaires pour des investigations supplémentaires ou des améliorations.")
 else:
     st.write("Aucune anomalie détectée dans les données filtrées.")

@@ -154,6 +154,8 @@ def preprocessing(df):
         if col in df.columns:
             df[col] = df[col].str.upper()
 
+    df["appartenance_du_conducteur"] = df["appartenance_du_conducteur"].replace({"COLIS PRIVE LIVRAISON": "COLIS PRIVE"})
+
     return df
 
 df = preprocessing(df)
