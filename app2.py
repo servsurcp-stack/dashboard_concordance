@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import ast
 
 # Configuration de la page
 st.set_page_config(page_title="Dashboard EDA Vérifications Chargement", layout="wide")
@@ -60,7 +61,6 @@ def load_data(query="SELECT * FROM db_verifications_chargement;"):
     if "is_surete" in df.columns:
         df["is_surete"] = df["is_surete"].astype(bool, errors="ignore")
     return df
-
 df = load_data()
 
 # Sidebar pour filtres
@@ -346,6 +346,7 @@ if not df_semaine['Nb Anomalies'].empty:
 st.plotly_chart(fig_semaine, use_container_width=True)
 st.dataframe(df_semaine)
 
+
 # Section 5: Types de Vérifications et Anomalies Spécifiques
 st.header("Types de Vérifications et Anomalies")
 col_verif, col_anomalie = st.columns(2)
@@ -357,39 +358,60 @@ with col_verif:
     fig_verif = px.pie(verif_type, values='Nombre', names='Type', title="Répartition Types de Vérifications")
     st.plotly_chart(fig_verif, use_container_width=True)
 
-# Anomalies par Type (Chargement, Véhicule, Suivi)
+
+# Fonction pour compter les top anomalies (avec parsing)
+def top_anomalies(colonne, unique_per_row=False):
+    # Parsing des chaînes en listes
+    def parse(value):
+        if pd.isna(value) or value == "Aucune anomalie":
+            return []
+        if isinstance(value, str):
+            try:
+                parsed = ast.literal_eval(value)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if item]  # Nettoie et convertit en str
+                else:
+                    return [str(parsed).strip()]
+            except (ValueError, SyntaxError):
+                return [value.strip()]  # Si pas parsable, traite comme simple string
+        elif isinstance(value, list):
+            return [str(item).strip() for item in value if item]  # Si déjà liste
+        else:
+            return []
+
+    parsed_series = filtered_df[colonne].apply(parse)
+    
+    # Explose en valeurs individuelles
+    exploded = parsed_series.explode()
+    exploded = exploded[exploded.notna() & (exploded != "Aucune anomalie")]
+    
+    if unique_per_row:
+        # Option : unique par ligne (enlève doublons dans la même tournée)
+        df_temp = pd.DataFrame({'original_index': exploded.index, 'anomalie': exploded})
+        df_temp = df_temp.drop_duplicates(subset=['original_index', 'anomalie'])
+        counts = df_temp['anomalie'].value_counts()
+    else:
+        # Comptage total des occurrences
+        counts = exploded.value_counts()
+    
+    return counts.head(5)
+
 with col_anomalie:
     fig_anom = make_subplots(rows=1, cols=3, subplot_titles=('Anomalies Chargement', 'Anomalies Véhicule', 'Anomalies Suivi'))
-    if 'anomalie_de_chargement' in filtered_df.columns:
-        anom_charg = filtered_df['anomalie_de_chargement'].dropna().astype(str)
-        anom_charg = anom_charg[anom_charg.str.strip().str.lower() != 'none']
-        anom_charg = anom_charg[anom_charg.str.strip() != '']
-        anom_charg = anom_charg.value_counts().head(5)
-    else:
-        anom_charg = pd.Series(dtype=int)
-    fig_anom.add_trace(go.Bar(x=anom_charg.index, y=anom_charg.values), row=1, col=1)
 
-    if 'anomalie_de_vehicule' in filtered_df.columns:
-        anom_veh = filtered_df['anomalie_de_vehicule'].dropna().astype(str)
-        anom_veh = anom_veh[anom_veh.str.strip().str.lower() != 'none']
-        anom_veh = anom_veh[anom_veh.str.strip() != '']
-        anom_veh = anom_veh.value_counts().head(5)
-    else:
-        anom_veh = pd.Series(dtype=int)
-    fig_anom.add_trace(go.Bar(x=anom_veh.index, y=anom_veh.values), row=1, col=2)
+    # Top 5 pour chaque catégorie (change unique_per_row=True si tu veux unique par tournée)
+    top_charg = top_anomalies('anomalie_de_chargement')
+    top_veh = top_anomalies('anomalie_de_vehicule')
+    top_suivi = top_anomalies('anomalie_suivi_de_tournee')
 
-    if 'anomalie_suivi_de_tournee' in filtered_df.columns:
-        anom_suivi = filtered_df['anomalie_suivi_de_tournee'].dropna().astype(str)
-        anom_suivi = anom_suivi[anom_suivi.str.strip().str.lower() != 'none']
-        anom_suivi = anom_suivi[anom_suivi.str.strip() != '']
-        anom_suivi = anom_suivi.value_counts().head(5)
-    else:
-        anom_suivi = pd.Series(dtype=int)
-    fig_anom.add_trace(go.Bar(x=anom_suivi.index, y=anom_suivi.values), row=1, col=3)
+    fig_anom.add_trace(go.Bar(x=top_charg.index, y=top_charg.values), row=1, col=1)
+    fig_anom.add_trace(go.Bar(x=top_veh.index, y=top_veh.values), row=1, col=2)
+    fig_anom.add_trace(go.Bar(x=top_suivi.index, y=top_suivi.values), row=1, col=3)
+
     fig_anom.update_layout(height=400, title_text="Top Anomalies par Catégorie")
     st.plotly_chart(fig_anom, use_container_width=True)
 
-# Nouvelle Section: Analyse des Vérifications Documentaires
+# Section 6 : Analyse des Vérifications Documentaires
 st.header("Analyse des Vérifications Documentaires")
 col_licence, col_permis, col_liste = st.columns(3)
 
@@ -397,6 +419,7 @@ col_licence, col_permis, col_liste = st.columns(3)
 with col_licence:
     if 'presence_licence_transport' in filtered_df.columns:
         licence_counts = filtered_df['presence_licence_transport'].value_counts().reset_index()
+        licence_counts = licence_counts[licence_counts["presence_licence_transport"] != "None"]
         licence_counts.columns = ['Présence Licence', 'Nombre']
         fig_licence = px.pie(licence_counts, values='Nombre', names='Présence Licence', 
                              title="Présence de la Licence de Transport")
@@ -406,6 +429,7 @@ with col_licence:
 with col_permis:
     if 'presentation_permis_conduire' in filtered_df.columns:
         permis_counts = filtered_df['presentation_permis_conduire'].value_counts().reset_index()
+        permis_counts = permis_counts[permis_counts["presentation_permis_conduire"] != "None"]
         permis_counts.columns = ['Permis Présenté', 'Nombre']
         fig_permis = px.pie(permis_counts, values='Nombre', names='Permis Présenté', 
                             title="Présentation du Permis de Conduire")
@@ -415,6 +439,7 @@ with col_permis:
 with col_liste:
     if 'verification_liste_nominative' in filtered_df.columns:
         liste_counts = filtered_df['verification_liste_nominative'].value_counts().reset_index()
+        liste_counts = liste_counts[liste_counts["verification_liste_nominative"] != "None"]
         liste_counts.columns = ['Liste Nominative Vérifiée', 'Nombre']
         fig_liste = px.pie(liste_counts, values='Nombre', names='Liste Nominative Vérifiée', 
                            title="Vérification Liste Nominative")
@@ -474,7 +499,6 @@ st.subheader("Détails du Top 20")
 st.dataframe(top_tournees)
 if not top_tournees_anomalies.empty:
     max_anom = top_tournees_anomalies.iloc[0]
-    st.write(f"La tournée avec le plus d'anomalies est la {max_anom['tournee']} avec {max_anom['Nb Anomalies']} anomalies.")
     st.write("Ces tournées représentent les zones prioritaires pour des investigations supplémentaires ou des améliorations.")
 else:
     st.write("Aucune anomalie détectée dans les données filtrées.")
