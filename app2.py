@@ -455,7 +455,7 @@ col_licence, col_permis, col_liste = st.columns(3)
 with col_licence:
     if 'presence_licence_transport' in filtered_df.columns:
         licence_counts = filtered_df['presence_licence_transport'].value_counts().reset_index()
-        licence_counts = licence_counts[licence_counts["presence_licence_transport"] != "nan"]
+        licence_counts = licence_counts[licence_counts["presence_licence_transport"] != "None"]
         licence_counts.columns = ['Présence Licence', 'Nombre']
         fig_licence = px.pie(
             licence_counts,
@@ -469,7 +469,7 @@ with col_licence:
 with col_permis:
     if 'presentation_permis_conduire' in filtered_df.columns:
         permis_counts = filtered_df['presentation_permis_conduire'].value_counts().reset_index()
-        permis_counts = permis_counts[permis_counts["presentation_permis_conduire"] != "nan"]
+        permis_counts = permis_counts[permis_counts["presentation_permis_conduire"] != "None"]
         permis_counts.columns = ['Permis Présenté', 'Nombre']
         fig_permis = px.pie(
             permis_counts,
@@ -483,7 +483,7 @@ with col_permis:
 with col_liste:
     if 'verification_liste_nominative' in filtered_df.columns:
         liste_counts = filtered_df['verification_liste_nominative'].value_counts().reset_index()
-        liste_counts = liste_counts[liste_counts["verification_liste_nominative"] != "nan"]
+        liste_counts = liste_counts[liste_counts["verification_liste_nominative"] != "None"]
         liste_counts.columns = ['Liste Nominative Vérifiée', 'Nombre']
         fig_liste = px.pie(
             liste_counts,
