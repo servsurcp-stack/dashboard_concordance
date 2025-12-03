@@ -63,6 +63,14 @@ def load_data(query="SELECT * FROM db_verifications_chargement;"):
     return df
 df = load_data()
 
+# Bornes de dates globales
+if "date" in df.columns:
+    min_date = df["date"].min().date()
+    max_date = df["date"].max().date()
+else:
+    min_date = None
+    max_date = None
+
 # Sidebar pour filtres
 st.sidebar.title("Filtres")
 
@@ -84,6 +92,11 @@ if 'selected_appartenance' not in st.session_state:
     st.session_state['selected_appartenance'] = default_appartenance
 if 'selected_is_surete' not in st.session_state:
     st.session_state['selected_is_surete'] = default_is_surete
+if "selected_date_range" not in st.session_state:
+    if min_date and max_date:
+        st.session_state["selected_date_range"] = (min_date, max_date)
+    else:
+        st.session_state["selected_date_range"] = (None, None)
 
 def reset_filters():
     """Remettre les filtres à leurs valeurs par défaut."""
@@ -92,6 +105,8 @@ def reset_filters():
     st.session_state['selected_type_verif'] = default_type_verif
     st.session_state['selected_appartenance'] = default_appartenance
     st.session_state['selected_is_surete'] = default_is_surete
+    if min_date and max_date:
+        st.session_state["selected_date_range"] = (min_date, max_date)
 
 # Bouton pour réinitialiser
 if st.sidebar.button("Réinitialiser les filtres"):
@@ -133,13 +148,38 @@ selected_is_surete = st.sidebar.multiselect(
     key='selected_is_surete'
 )
 
+# Filtre de dates
+if min_date and max_date:
+    start_date, end_date = st.sidebar.date_input(
+        "Période (date)",
+        value=st.session_state.get("selected_date_range", (min_date, max_date)),
+        min_value=min_date,
+        max_value=max_date,
+        key="selected_date_range"
+    )
+else:
+    start_date, end_date = None, None
+
 # Filtrer les données
-filtered_df = df[
-    (df['agences_antennes'].isin(selected_agences)) &
-    (df['jour'].isin(selected_jours)) &
-    (df['type_de_verification'].isin(selected_type_verif)) &
-    (df['appartenance_du_conducteur'].isin(selected_appartenance)) &
-    (df['is_surete'].isin(selected_is_surete))
+filtered_df = df.copy()
+
+
+
+
+
+
+# Filtre dates
+if "date" in filtered_df.columns and start_date and end_date:
+    mask_date = (filtered_df["date"].dt.date >= start_date) & (filtered_df["date"].dt.date <= end_date)
+    filtered_df = filtered_df[mask_date]
+
+# Autres filtres
+filtered_df = filtered_df[
+    (filtered_df['agences_antennes'].isin(selected_agences)) &
+    (filtered_df['jour'].isin(selected_jours)) &
+    (filtered_df['type_de_verification'].isin(selected_type_verif)) &
+    (filtered_df['appartenance_du_conducteur'].isin(selected_appartenance)) &
+    (filtered_df['is_surete'].isin(selected_is_surete))
 ]
 
 # Titre principal
@@ -151,7 +191,10 @@ col1, col2, col3, col4 = st.columns(4)
 total_controles = len(filtered_df)
 total_anomalies = len(filtered_df[filtered_df['anomalie'] == 'Oui'])
 pourcent_anomalies = (total_anomalies / total_controles * 100) if total_controles > 0 else 0
-nb_cp = len(filtered_df[(filtered_df['appartenance_du_conducteur'] == 'COLIS PRIVE') | (filtered_df['appartenance_du_conducteur'] == 'COLIS PRIVE')])
+nb_cp = len(filtered_df[
+    (filtered_df['appartenance_du_conducteur'] == 'COLIS PRIVE') |
+    (filtered_df['appartenance_du_conducteur'] == 'COLIS PRIVE')
+])
 nb_dsp = len(filtered_df[filtered_df['appartenance_du_conducteur'] == 'DSP'])
 
 col1.metric("Total Contrôles", total_controles)
@@ -199,8 +242,8 @@ st.header("Analyse des Anomalies")
 
 # Classement Sites par Anomalies
 anomalies_par_site = filtered_df[filtered_df['anomalie'] == 'Oui']['agences_antennes'].value_counts().reset_index()
-anomalies_par_site.columns = ['Site', 'Nombre d\'Anomalies']
-fig_anomalies_site = px.bar(anomalies_par_site, x='Site', y='Nombre d\'Anomalies', title="Classement Sites par Anomalies")
+anomalies_par_site.columns = ['Site', "Nombre d'Anomalies"]
+fig_anomalies_site = px.bar(anomalies_par_site, x='Site', y="Nombre d'Anomalies", title="Classement Sites par Anomalies")
 st.plotly_chart(fig_anomalies_site, use_container_width=True)
 
 # % Anomalies vs Nb Contrôles
@@ -248,7 +291,7 @@ if 'jour' in filtered_df.columns:
         x='jour',
         y='% Anomalies',
         title="% d'Anomalies par Jour",
-        labels={'jour': 'Jour', '% Anomalies': 'Pourcentage d\'Anomalies'},
+        labels={'jour': 'Jour', '% Anomalies': "Pourcentage d'Anomalies"},
         text='% Anomalies'
     )
     fig_anom_jour.update_traces(texttemplate='%{text:.2f}%', textposition='auto')
@@ -346,7 +389,6 @@ if not df_semaine['Nb Anomalies'].empty:
 st.plotly_chart(fig_semaine, use_container_width=True)
 st.dataframe(df_semaine)
 
-
 # Section 5: Types de Vérifications et Anomalies Spécifiques
 st.header("Types de Vérifications et Anomalies")
 col_verif, col_anomalie = st.columns(2)
@@ -358,7 +400,6 @@ with col_verif:
     fig_verif = px.pie(verif_type, values='Nombre', names='Type', title="Répartition Types de Vérifications")
     st.plotly_chart(fig_verif, use_container_width=True)
 
-
 # Fonction pour compter les top anomalies (avec parsing)
 def top_anomalies(colonne, unique_per_row=False):
     # Parsing des chaînes en listes
@@ -369,37 +410,32 @@ def top_anomalies(colonne, unique_per_row=False):
             try:
                 parsed = ast.literal_eval(value)
                 if isinstance(parsed, list):
-                    return [str(item).strip() for item in parsed if item]  # Nettoie et convertit en str
+                    return [str(item).strip() for item in parsed if item]
                 else:
                     return [str(parsed).strip()]
             except (ValueError, SyntaxError):
-                return [value.strip()]  # Si pas parsable, traite comme simple string
+                return [value.strip()]
         elif isinstance(value, list):
-            return [str(item).strip() for item in value if item]  # Si déjà liste
+            return [str(item).strip() for item in value if item]
         else:
             return []
 
     parsed_series = filtered_df[colonne].apply(parse)
-    
-    # Explose en valeurs individuelles
     exploded = parsed_series.explode()
     exploded = exploded[exploded.notna() & (exploded != "Aucune anomalie")]
-    
+
     if unique_per_row:
-        # Option : unique par ligne (enlève doublons dans la même tournée)
         df_temp = pd.DataFrame({'original_index': exploded.index, 'anomalie': exploded})
         df_temp = df_temp.drop_duplicates(subset=['original_index', 'anomalie'])
         counts = df_temp['anomalie'].value_counts()
     else:
-        # Comptage total des occurrences
         counts = exploded.value_counts()
-    
+
     return counts.head(5)
 
 with col_anomalie:
     fig_anom = make_subplots(rows=1, cols=3, subplot_titles=('Anomalies Chargement', 'Anomalies Véhicule', 'Anomalies Suivi'))
 
-    # Top 5 pour chaque catégorie (change unique_per_row=True si tu veux unique par tournée)
     top_charg = top_anomalies('anomalie_de_chargement')
     top_veh = top_anomalies('anomalie_de_vehicule')
     top_suivi = top_anomalies('anomalie_suivi_de_tournee')
@@ -419,30 +455,42 @@ col_licence, col_permis, col_liste = st.columns(3)
 with col_licence:
     if 'presence_licence_transport' in filtered_df.columns:
         licence_counts = filtered_df['presence_licence_transport'].value_counts().reset_index()
-        licence_counts = licence_counts[licence_counts["presence_licence_transport"] != "None"]
+        licence_counts = licence_counts[licence_counts["presence_licence_transport"] != "nan"]
         licence_counts.columns = ['Présence Licence', 'Nombre']
-        fig_licence = px.pie(licence_counts, values='Nombre', names='Présence Licence', 
-                             title="Présence de la Licence de Transport")
+        fig_licence = px.pie(
+            licence_counts,
+            values='Nombre',
+            names='Présence Licence',
+            title="Présence de la Licence de Transport"
+        )
         st.plotly_chart(fig_licence, use_container_width=True)
 
 # Présentation du permis de conduire
 with col_permis:
     if 'presentation_permis_conduire' in filtered_df.columns:
         permis_counts = filtered_df['presentation_permis_conduire'].value_counts().reset_index()
-        permis_counts = permis_counts[permis_counts["presentation_permis_conduire"] != "None"]
+        permis_counts = permis_counts[permis_counts["presentation_permis_conduire"] != "nan"]
         permis_counts.columns = ['Permis Présenté', 'Nombre']
-        fig_permis = px.pie(permis_counts, values='Nombre', names='Permis Présenté', 
-                            title="Présentation du Permis de Conduire")
+        fig_permis = px.pie(
+            permis_counts,
+            values='Nombre',
+            names='Permis Présenté',
+            title="Présentation du Permis de Conduire"
+        )
         st.plotly_chart(fig_permis, use_container_width=True)
 
 # Vérification de la liste nominative
 with col_liste:
     if 'verification_liste_nominative' in filtered_df.columns:
         liste_counts = filtered_df['verification_liste_nominative'].value_counts().reset_index()
-        liste_counts = liste_counts[liste_counts["verification_liste_nominative"] != "None"]
+        liste_counts = liste_counts[liste_counts["verification_liste_nominative"] != "nan"]
         liste_counts.columns = ['Liste Nominative Vérifiée', 'Nombre']
-        fig_liste = px.pie(liste_counts, values='Nombre', names='Liste Nominative Vérifiée', 
-                           title="Vérification Liste Nominative")
+        fig_liste = px.pie(
+            liste_counts,
+            values='Nombre',
+            names='Liste Nominative Vérifiée',
+            title="Vérification Liste Nominative"
+        )
         st.plotly_chart(fig_liste, use_container_width=True)
 
 # Section 6: Anomalies CP vs DSP
@@ -469,7 +517,7 @@ fig_pourcent_anomalies = px.bar(
     x='appartenance_du_conducteur',
     y='% Anomalies',
     title="% d'Anomalies par Appartenance",
-    labels={'appartenance_du_conducteur': 'Appartenance', '% Anomalies': 'Pourcentage d\'Anomalies'},
+    labels={'appartenance_du_conducteur': 'Appartenance', '% Anomalies': "Pourcentage d'Anomalies"},
     text='% Anomalies'
 )
 fig_pourcent_anomalies.update_traces(texttemplate='%{text:.2f}%', textposition='auto')
@@ -485,12 +533,14 @@ top_tournees['% Anomalies'] = (top_tournees['Nb Anomalies'] / top_tournees['Nb C
 top_tournees = top_tournees.sort_values('Nb Anomalies', ascending=False).head(20)
 top_tournees['tournee'] = top_tournees['tournee'].astype(str)
 agences_par_tournee = filtered_df.groupby('tournee')['agences_antennes'].unique().reset_index()
+
 def join_agences(arr):
     try:
         lst = [str(x) for x in arr if pd.notna(x)]
         return '; '.join(sorted(set(lst)))
     except Exception:
         return ''
+
 agences_par_tournee['Agences'] = agences_par_tournee['agences_antennes'].apply(join_agences)
 agences_par_tournee = agences_par_tournee.drop(columns=['agences_antennes'])
 top_tournees = pd.merge(top_tournees, agences_par_tournee, on='tournee', how='left')
@@ -506,3 +556,99 @@ else:
 # Affichage des données brutes (optionnel)
 if st.checkbox("Afficher les Données Filtrées"):
     st.dataframe(filtered_df)
+
+# Section 8: RAPPORT COMPLET - Toutes agences (0 inclus) ✅ FINAL
+st.header("🚨 RAPPORT COMPLET - Toutes les agences")
+
+if "date" in filtered_df.columns and "agences_antennes" in filtered_df.columns:
+    df_clean = filtered_df.dropna(subset=['agences_antennes', 'date']).copy()
+    df_clean = df_clean[df_clean['agences_antennes'] != 'nan']
+    df_clean['annee_semaine'] = df_clean['date'].dt.strftime('%Y-W%W')
+    
+    controles_semaine = df_clean.groupby(['annee_semaine', 'agences_antennes']).size().reset_index(name='nb_controles')
+    toutes_agences = sorted(df_clean['agences_antennes'].unique())
+    semaines_disponibles = sorted(controles_semaine['annee_semaine'].unique())
+    
+    col_filtre1, col_filtre2 = st.columns(2)
+    with col_filtre1:
+        options_semaines = ["📊 Toutes les semaines"] + semaines_disponibles
+        selected_semaine = st.selectbox(
+            "🔍 Période", options_semaines, index=0,
+            format_func=lambda x: x if x == "📊 Toutes les semaines" 
+                                 else f"{x} ({controles_semaine[controles_semaine['annee_semaine']==x]['nb_controles'].sum()} contrôles)"
+        )
+    with col_filtre2:
+        seuil_controles = st.slider("🚦 Seuil alerte", 0, 10, 1)
+
+    # 🆕 CARTES COMPLÈTES : Toutes agences + 0 contrôles
+    if selected_semaine == "📊 Toutes les semaines":
+        stats_completes = []
+        for agence in toutes_agences:
+            controles_agence = controles_semaine[controles_semaine['agences_antennes'] == agence]
+            moyenne = controles_agence['nb_controles'].mean() if len(controles_agence) > 0 else 0
+            total = controles_agence['nb_controles'].sum()
+            stats_completes.append({'agences_antennes': agence, 'Moyenne/Sem': moyenne, 'Total': total})
+        
+        stats_df = pd.DataFrame(stats_completes)
+        agences_faibles = stats_df[stats_df['Moyenne/Sem'] < seuil_controles].sort_values('Moyenne/Sem')
+        total_controles = controles_semaine['nb_controles'].sum()
+        titre = f"📊 MOYENNE TOUTES AGENCES (n={len(toutes_agences)})"
+        
+    else:
+        controles_semaine_select = controles_semaine[controles_semaine['annee_semaine'] == selected_semaine]
+        total_semaine = controles_semaine_select['nb_controles'].sum()
+        
+        carte_complete = []
+        for agence in toutes_agences:
+            controle = controles_semaine_select[controles_semaine_select['agences_antennes'] == agence]
+            nb = controle['nb_controles'].iloc[0] if len(controle) > 0 else 0
+            carte_complete.append({'agences_antennes': agence, 'nb_controles': nb})
+        
+        carte_df = pd.DataFrame(carte_complete)
+        agences_faibles = carte_df[carte_df['nb_controles'] < seuil_controles].sort_values('nb_controles')
+        total_controles = total_semaine
+        titre = f"📅 {selected_semaine} - TOUTES AGENCES (n={len(toutes_agences)})"
+
+    # KPIs
+    col1, col2, col3, col4 = st.columns(4)
+    with col1: st.metric("🏢 Total agences", len(toutes_agences))
+    with col2: st.metric("📊 Contrôles", f"{total_controles:,}")
+    with col3: st.metric("🚨 Sous-seuil", len(agences_faibles))
+    with col4: st.metric("📉 % inactives", f"{len(agences_faibles)/len(toutes_agences)*100:.0f}%")
+
+    st.subheader(titre)
+    
+    if not agences_faibles.empty:
+        # Tableau avec 0 VISIBLE
+        if selected_semaine == "📊 Toutes les semaines":
+            fig_table = go.Figure(data=[go.Table(
+                header=dict(values=['🏢 Agence', '📊 Moy/Sem', '📈 Total', '🚦 Status'], 
+                           line_color='darkblue', fill_color='darkblue', font=dict(color='white', size=13)),
+                cells=dict(values=[
+                    agences_faibles['agences_antennes'],
+                    agences_faibles['Moyenne/Sem'].round(2),
+                    agences_faibles['Total'].astype(int),
+                    ['🚨 ZÉRO' if x == 0 else f'⚠️ {x:.1f}' for x in agences_faibles['Moyenne/Sem']]
+                ], line_color='gray', font=dict(size=12), height=35)
+            )])
+        else:
+            fig_table = go.Figure(data=[go.Table(
+                header=dict(values=['🏢 Agence', '📊 Nb Contrôles', '🚦 Status'], 
+                           line_color='darkred', fill_color='darkred', font=dict(color='white', size=13)),
+                cells=dict(values=[
+                    agences_faibles['agences_antennes'],
+                    agences_faibles['nb_controles'].astype(int),
+                    ['🚨 ZÉRO' if x == 0 else f'⚠️ {x}' for x in agences_faibles['nb_controles']]
+                ], line_color='gray', font=dict(size=12), height=35)
+            )])
+        
+        st.plotly_chart(fig_table, use_container_width=True)
+        
+        # Export
+        csv_data = agences_faibles.to_csv(index=False).encode('utf-8')
+        nom_csv = "moyenne" if selected_semaine == "📊 Toutes les semaines" else selected_semaine.replace('-','_')
+        st.download_button(f"📥 Alertes {nom_csv}", csv_data, f"alertes_{nom_csv}_{pd.Timestamp.now().strftime('%Y%m%d')}.csv")
+        
+        st.success(f"🎯 **{len(agences_faibles)}/{len(toutes_agences)} agences** ({len(agences_faibles)/len(toutes_agences)*100:.0f}%) sous {seuil_controles}")
+    else:
+        st.success("🎉 Toutes les agences respectent le seuil !")
