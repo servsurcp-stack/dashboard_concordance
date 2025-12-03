@@ -563,6 +563,7 @@ st.header("🚨 RAPPORT COMPLET - Toutes les agences")
 if "date" in filtered_df.columns and "agences_antennes" in filtered_df.columns:
     df_clean = filtered_df.dropna(subset=['agences_antennes', 'date']).copy()
     df_clean = df_clean[df_clean['agences_antennes'] != 'nan']
+    df_clean = df_clean[df_clean['agences_antennes'] != 'None']
     df_clean['annee_semaine'] = df_clean['date'].dt.strftime('%Y-W%W')
     
     controles_semaine = df_clean.groupby(['annee_semaine', 'agences_antennes']).size().reset_index(name='nb_controles')
