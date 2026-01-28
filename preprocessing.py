@@ -1,25 +1,24 @@
 import pandas as pd
-import numpy as np
-import seaborn as sns
-import openpyxl
 import re
 
 # Charger les fichiers Excel
-df1 = pd.read_excel("VERIFICATION DE CONCORDANCE DE CHARGEMENT VERIFICATION DOCUMENTAIRE - ETAT DES VEHICULES.xlsx", engine="openpyxl")
-df2 = pd.read_excel("VERIFICATION DE CONCORDANCE DE CHARGEMENT.xlsx", engine="openpyxl", skiprows=[1, 1])
+df1 = pd.read_excel("./data/VERIFICATION DE CONCORDANCE DE CHARGEMENT VERIFICATION DOCUMENTAIRE - ETAT DES VEHICULES.xlsx", engine="openpyxl")
+df2 = pd.read_excel("./data/VERIFICATION DE CONCORDANCE DE CHARGEMENT.xlsx", engine="openpyxl", skiprows=[1, 1])
 
 # Étape 1 : Renommer les colonnes du premier DataFrame pour correspondre au second
 rename_dict = {
     'Date du contrôle': 'Date',
     'Personne en charge de la vérification': 'Nom de la personne en charge de la vérification',
     'Tournée / PDA / Nom de la société si besoin': 'Tournée / PDA / Nom de la société si DSP',
-    'Type de véhicule / Immatriculation': 'Type de véhicule / immatriculation'
+    'Type de véhicule / Immatriculation': 'Type de véhicule / immatriculation',
+    'N° TOURNEE' : 'NUMERO DE TOURNEE'
 }
 df1 = df1.rename(columns=rename_dict)
 
 # Étape 2 : Ajouter la colonne 'is_surete'
 df1['is_surete'] = False
 df2['is_surete'] = True
+
 
 # Étape 3 : Supprimer la colonne 'id' ou 'Id' des deux DataFrames pour éviter les doublons
 for df in [df1, df2]:
@@ -67,43 +66,6 @@ def extract_vehicle_info(value):
     
     return type_vehicule, immat_standard
 
-# Fonction pour extraire tournée, PDA et nom de la société
-def extract_tournee_pda_societe(value):
-    if pd.isna(value):
-        return pd.NA, pd.NA, pd.NA
-    
-    # Convertir en majuscule et nettoyer les espaces inutiles
-    value = str(value).upper().strip()
-    
-    # Expression régulière pour capturer :
-    # - Tournée : séquence de chiffres
-    # - PDA : une seule lettre juste après la tournée (éventuellement séparée par un espace ou "/")
-    # - Société : tout ce qui suit après la tournée et le PDA
-    pattern = r'^(\d+)(?:[\s/]*([A-Z]))?(?:[\s/]*(.*))?$'
-    match = re.match(pattern, value.replace("/", " ").strip())
-    
-    tournee = pd.NA
-    pda = pd.NA
-    societe = pd.NA
-    
-    if match:
-        tournee = match.group(1)  # Numéro de tournée
-        pda = match.group(2) if match.group(2) else pd.NA  # PDA (une seule lettre)
-        societe = match.group(3) if match.group(3) else pd.NA  # Nom de la société
-    else:
-        # Si pas de match, considérer la valeur entière comme société ou tournée
-        if re.match(r'^\d+$', value):
-            tournee = value
-        else:
-            societe = value
-    
-    # Nettoyer la société (supprimer espaces multiples et barres obliques)
-    if pd.notna(societe):
-        societe = re.sub(r'\s+', ' ', societe.strip())
-        if not societe:  # Si vide après nettoyage
-            societe = pd.NA
-    
-    return tournee, pda, societe
 
 def arrondir_demi_heure(dt):
     minute = dt.minute
@@ -116,8 +78,6 @@ def arrondir_demi_heure(dt):
         minute = 0
     return dt.replace(minute=minute, second=0, microsecond=0)
 
-import pandas as pd
-import re
 
 def rename_columns(df):
     """
@@ -138,21 +98,19 @@ def rename_columns(df):
         'Date': 'date',
         'Lieu de la vérification': 'lieu_de_la_verification',
         'Appartenance du conducteur': 'appartenance_du_conducteur',
-        'Tournée / PDA / Nom de la société si DSP': 'tournee_pda_nom_societe',
         'Type de vérification': 'type_de_verification',
         'REGION': 'region',
-        "Présence dans le véhicule de la copie numérotée de la licence de transport.\xa0\nHypothèse de la non présentation : Contactez le\xa0gérant de l'entreprise de Transport afin de l'en informer.\xa0\nC'est à lui..." : 'presence_licence_transport',
+        "Présence dans le véhicule de la copie numérotée de la licence de transport.\xa0\nHypothèse de la non présentation : Contactez le\xa0gérant de l'entreprise de Transport afin de l'en informer.\xa0\nC'est à lui de " : 'presence_licence_transport',
         'Numéro de la licence': 'numero_licence',
-        "Présentation du Permis de Conduire\nHypothèse de la non présentation du permis de conduire :\xa0 Contactez le\xa0gérant de l'entreprise de Transport\xa0\xa0afin de l'en informer.\nC'est à lui de gérer\xa0la situat..." : 'presentation_permis_conduire',
-        "Vérification Liste nominative des salariés affectés à la prestation\nLa personne en charge du contrôle à quai doit se munir de la liste nominative fournie par le gérant de l'entreprise de Transport..." : 'verification_liste_nominative',
+        "Présentation du Permis de Conduire\nHypothèse de la non présentation du permis de conduire :\xa0 Contactez le\xa0gérant de l'entreprise de Transport\xa0\xa0afin de l'en informer.\nC'est à lui de gérer\xa0la situation." : 'presentation_permis_conduire',
+        "Vérification Liste nominative des salariés affectés à la prestation\nLa personne en charge du contrôle à quai doit se munir de la liste nominative fournie par le gérant de l'entreprise de Transport et " : 'verification_liste_nominative',
         'ANOMALIE': 'anomalie',
         'ANOMALIE DE CHARGEMENT': 'anomalie_de_chargement',
         'ANOMALIE DE VEHICULE': 'anomalie_de_vehicule',
         'ANOMALIE SUIVI DE TOURNEE': 'anomalie_suivi_de_tournee',
         'AGENCES/ANTENNES': 'agences_antennes',
-        'Tournée': 'tournee',
-        'PDA': 'pda',
-        'Nom de la société': 'nom_de_la_societe',
+        'NUMERO DE TOURNEE': 'tournee',
+        'LETTRE DE PDA': 'pda',
         'jour': 'jour',
         'heure_arrondie': 'heure_arrondie',
         'is_surete': 'is_surete'
@@ -178,11 +136,11 @@ def rename_columns(df):
     # Vérifier que toutes les colonnes cibles sont présentes, sinon ajouter des colonnes vides
     target_columns = [
         'id', 'heure_de_debut', 'heure_de_fin', 'date', 'lieu_de_la_verification',
-        'appartenance_du_conducteur', 'tournee_pda_nom_societe', 'type_de_verification',
+        'appartenance_du_conducteur', 'type_de_verification',
         'region', 'presence_licence_transport', 'numero_licence', 'presentation_permis_conduire',
         'verification_liste_nominative', 'anomalie', 'anomalie_de_chargement',
         'anomalie_de_vehicule', 'is_surete', 'anomalie_suivi_de_tournee',
-        'agences_antennes', 'tournee', 'pda', 'nom_de_la_societe', 'jour', 'heure_arrondie'
+        'agences_antennes', 'tournee', 'pda', 'jour', 'heure_arrondie'
     ]
     for col in target_columns:
         if col not in df.columns:
@@ -214,26 +172,18 @@ def preprocessing(df):
     df["Nom"] = df["Nom"].str.replace("-", " ", regex=False)
 
     # Appliquer la fonction pour créer deux nouvelles colonnes
-    df[["Type de véhicule", "Immatriculation"]] = df["Type de véhicule / immatriculation"].apply(
+    df[["Type de véhicule", "Immatriculation"]] = df["Immatriculation"].apply(
         lambda x: pd.Series(extract_vehicle_info(x))
     )
-    
-    # Supprimer la colonne originale
-    df = df.drop(columns=["Type de véhicule / immatriculation"])
     
     # Mettre les colonnes en majuscule pour homogénéité
     df["Type de véhicule"] = df["Type de véhicule"].str.upper()
     df["Immatriculation"] = df["Immatriculation"].str.upper()
 
     
-    # Appliquer la fonction pour créer trois nouvelles colonnes
-    df[["Tournée", "PDA", "Nom de la société"]] = df["Tournée / PDA / Nom de la société si DSP"].apply(
-        lambda x: pd.Series(extract_tournee_pda_societe(x))
-    )
     
     # Standardiser : tout en majuscule
-    df["PDA"] = df["PDA"].str.upper()
-    df["Nom de la société"] = df["Nom de la société"].str.upper()
+    df["PDA"] = df["LETTRE DE PDA"].str.upper()
     
     df.drop(columns=["Matière dangereuse"],inplace=True)
     df.rename(columns={"ANOMALIE DE CHARGEMENT\xa0":"ANOMALIE DE CHARGEMENT"},inplace = True)
@@ -255,7 +205,6 @@ def preprocessing(df):
     
 
     return df
-
 
 def uniform_anomalies(df) :
     # Remplacer NaN
@@ -326,12 +275,11 @@ def uniform_anomalies(df) :
     return df
 
 
-
 # Appliquer le preprocessing
 df = preprocessing(df_combined)
 
 df = uniform_anomalies(df)
 
 # Sauvegarder le DataFrame dans un CSV
-df.to_csv("verif_concordance.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
+df.to_csv("./data/verif_concordance.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
 print("Fichier 'verif_concordance.csv' généré avec succès.")
