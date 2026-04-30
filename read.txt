@@ -1,0 +1,209 @@
+Here is a **structured, actionable analysis** of the **technical debt** present in the architecture described in your document.  
+Everything below is grounded in the content of the uploaded file, with citations from the text.
+
+---
+
+# **📌 Technical Debt Identified in the Architecture**
+
+Below is a consolidated list of **structural, technological, operational, and governance-related technical debt** that emerges from the architecture as described.
+
+---
+
+## **1. Legacy / Self‑Managed Infrastructure Components**
+Several critical services are **self‑hosted on EC2**, which creates long‑term operational debt.
+
+### **1.1 Active Directory, DNS, DHCP, SCCM, PKI, KMS all self‑managed on EC2**
+> “La plateforme intègre un Active Directory Microsoft autogéré sur EC2…”  
+> “DNS Microsoft… DHCP… SCCM sur EC2 Windows… PKI Windows…”  
+
+**Debt created:**
+- High maintenance burden (patching, backups, HA, DR).
+- Not cloud‑native → increases operational risk.
+- Harder to scale and automate.
+- Requires Windows licensing and lifecycle management.
+
+### **1.2 On‑premise‑style services recreated in AWS**
+- Printing servers on EC2  
+- SCCM for workstation management  
+- Windows KMS activation service  
+
+These are **not aligned with modern cloud‑native patterns**.
+
+---
+
+## **2. Heavy Dependence on Talend (ESB + ETL)**
+The architecture centralizes almost everything around Talend.
+
+> “Talend ESB constitue le point central de médiation…”  
+> “Talend ETL prend en charge les traitements…”  
+
+**Debt created:**
+- ESB‑centric architectures are known to become bottlenecks.
+- Vendor lock‑in on Talend for both integration and data pipelines.
+- ESB patterns are less scalable than event‑driven microservices.
+- Risk of monolithic integration layer.
+- Harder to evolve toward serverless or streaming‑native patterns.
+
+---
+
+## **3. Multi‑Layer Replication Chain for WMS/TMS**
+The parcel operational data flows through **three layers of replication**:
+
+MAWM (SaaS) → CEVA → AWS replica
+
+> “La base CEVA… réplique de MAWM… Une réplication de second niveau… vers AWS.”
+
+**Debt created:**
+- Complex replication chain → fragile, latency‑prone.
+- Hard to troubleshoot data inconsistencies.
+- Multi‑vendor dependency (Manhattan + CEVA + AWS).
+- Increased RPO/RTO risk.
+
+---
+
+## **4. Over‑Centralization of API Gateway as Single Entry Point**
+> “Tout flux entrant… doit obligatoirement passer par Amazon API Gateway.”
+
+**Debt created:**
+- Single choke point for all external traffic.
+- Risk of global outage if misconfigured.
+- Hard to scale for heterogeneous workloads (webhooks, bulk ingestion, etc.).
+- No mention of multi‑region API Gateway or failover strategy.
+
+---
+
+## **5. Over‑Reliance on Angular Frontends + Shared Library**
+> “Les frontaux… sont développés en Angular… une librairie en surcouche…”
+
+**Debt created:**
+- Shared UI library → coupling between domains.
+- Angular monorepo‑like patterns can slow independent deployments.
+- Mobile apps generated from Angular wrappers → technical compromise.
+
+---
+
+## **6. Lack of Cloud‑Native Identity & Access Management**
+The architecture relies heavily on **Windows AD** instead of AWS IAM, AWS SSO, or Cognito.
+
+**Debt created:**
+- AD on EC2 is not scalable or resilient.
+- No mention of federation with AWS IAM Identity Center.
+- Increased operational overhead and security risk.
+
+---
+
+## **7. SFTP as a Required Integration Channel**
+> “Le socle d’intégration doit proposer une capacité d’échange SFTP…”
+
+**Debt created:**
+- SFTP is legacy, stateful, and operationally heavy.
+- Requires key rotation, storage, monitoring, retries.
+- Encourages partners to avoid modern API‑based integration.
+
+---
+
+## **8. BI Architecture Split Between AWS and Microsoft**
+> “Power BI… capacité Microsoft Fabric F64…”  
+> “Option alternative QuickSight…”
+
+**Debt created:**
+- Hybrid BI stack increases complexity.
+- Power BI requires data egress from AWS → cost + latency.
+- Governance split between AWS and Microsoft ecosystems.
+
+---
+
+## **9. Rekognition Used for Face Detection but Not for Parcel Detection**
+> “La détection de visage… la plus fiable…  
+> La reconnaissance… de la présence effective d’un colis doit être considérée avec prudence…”
+
+**Debt created:**
+- Incomplete automation of photo validation.
+- Manual fallback processes likely required.
+- Future rework needed when parcel detection becomes reliable.
+
+---
+
+## **10. Multi‑AZ Strategy Without Multi‑Region Considerations**
+> “L’architecture s’appuie sur deux Availability Zones…”
+
+**Debt created:**
+- No disaster recovery outside the region.
+- AZ‑level resilience ≠ regional resilience.
+- Critical for logistics operations requiring 24/7 uptime.
+
+---
+
+## **11. ESB + ETL + MSK = Three Integration Paradigms**
+The architecture mixes:
+- ESB (synchronous mediation)
+- ETL (batch)
+- Kafka/MSK (asynchronous)
+
+**Debt created:**
+- Complex integration landscape.
+- Harder onboarding for developers.
+- Risk of duplicated logic across layers.
+- Increased operational cost.
+
+---
+
+## **12. No Mention of Infrastructure as Code (IaC)**
+The document does not reference:
+- Terraform  
+- CloudFormation  
+- CDK  
+
+**Debt created:**
+- Risk of manual deployments.
+- Harder to reproduce environments.
+- Increased configuration drift.
+
+---
+
+## **13. No Mention of Observability Stack Beyond Zabbix**
+> “Supervision… s’appuyant sur Zabbix…”
+
+**Debt created:**
+- Zabbix is not cloud‑native.
+- No mention of:
+  - distributed tracing (X‑Ray, OpenTelemetry)
+  - structured logging
+  - centralized dashboards (Grafana)
+  - log analytics (CloudWatch Logs Insights)
+
+---
+
+## **14. Strong Coupling to Salesforce, SAP, Manhattan, CEVA**
+The architecture depends on multiple SaaS vendors with proprietary integration models.
+
+**Debt created:**
+- High integration maintenance cost.
+- Risk of API changes breaking flows.
+- Hard to evolve toward event‑driven architecture.
+
+---
+
+# **📌 Summary Table**
+
+| Category | Technical Debt |
+|---------|----------------|
+| Legacy infra | AD/DNS/DHCP/SCCM/PKI on EC2 |
+| Integration | ESB‑centric architecture, SFTP, triple integration stack |
+| Data | Multi‑hop replication chain, BI split AWS/Microsoft |
+| Cloud architecture | No multi‑region, no IaC, limited observability |
+| Applications | Angular shared library, mobile hybrid approach |
+| AI/Automation | Partial automation of photo validation |
+| Security | Heavy reliance on Windows identity stack |
+
+---
+
+# **Would you like the next step?**
+I can produce, if you want:
+
+✅ A **prioritized remediation roadmap**  
+✅ A **risk heatmap** (impact × likelihood)  
+✅ A **target architecture** with modern AWS‑native patterns  
+✅ A **CIO‑level executive summary**  
+
+Which one should I generate?

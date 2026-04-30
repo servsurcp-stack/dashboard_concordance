@@ -3,7 +3,7 @@ import re
 
 # Charger les fichiers Excel
 df1 = pd.read_excel("./data/VERIFICATION DE CONCORDANCE DE CHARGEMENT VERIFICATION DOCUMENTAIRE - ETAT DES VEHICULES.xlsx", engine="openpyxl")
-df2 = pd.read_excel("./data/VERIFICATION DE CONCORDANCE DE CHARGEMENT.xlsx", engine="openpyxl", skiprows=[1, 1])
+df2 = pd.read_excel("./data/SURETE - VERIFICATION DE CONCORDANCE DE CHARGEMENT 2026.xlsx", engine="openpyxl", skiprows=[1, 1])
 
 # Étape 1 : Renommer les colonnes du premier DataFrame pour correspondre au second
 rename_dict = {
@@ -100,10 +100,10 @@ def rename_columns(df):
         'Appartenance du conducteur': 'appartenance_du_conducteur',
         'Type de vérification': 'type_de_verification',
         'REGION': 'region',
-        "Présence dans le véhicule de la copie numérotée de la licence de transport.\xa0\nHypothèse de la non présentation : Contactez le\xa0gérant de l'entreprise de Transport afin de l'en informer.\xa0\nC'est à lui de " : 'presence_licence_transport',
+        "Présence dans le véhicule de la copie numérotée de la licence de transport.\xa0\nHypothèse de la non présentation : Contactez le\xa0gérant de l'entreprise de Transport afin de l'en informer.\xa0\nC'est à lui..." : 'presence_licence_transport',
         'Numéro de la licence': 'numero_licence',
-        "Présentation du Permis de Conduire\nHypothèse de la non présentation du permis de conduire :\xa0 Contactez le\xa0gérant de l'entreprise de Transport\xa0\xa0afin de l'en informer.\nC'est à lui de gérer\xa0la situation." : 'presentation_permis_conduire',
-        "Vérification Liste nominative des salariés affectés à la prestation\nLa personne en charge du contrôle à quai doit se munir de la liste nominative fournie par le gérant de l'entreprise de Transport et " : 'verification_liste_nominative',
+        "Présentation du Permis de Conduire\nHypothèse de la non présentation du permis de conduire :\xa0 Contactez le\xa0gérant de l'entreprise de Transport\xa0\xa0afin de l'en informer.\nC'est à lui de gérer\xa0la situat..." : 'presentation_permis_conduire',
+        "Vérification Liste nominative des salariés affectés à la prestation\nLa personne en charge du contrôle à quai doit se munir de la liste nominative fournie par le gérant de l'entreprise de Transport..." : 'verification_liste_nominative',
         'ANOMALIE': 'anomalie',
         'ANOMALIE DE CHARGEMENT': 'anomalie_de_chargement',
         'ANOMALIE DE VEHICULE': 'anomalie_de_vehicule',
@@ -153,20 +153,23 @@ def rename_columns(df):
     return df
 
 def preprocessing(df):
-    df["AGENCES/ANTENNES"] = ""
-    for index, row in df.iterrows():
-        if row["REGION"] == "REGION EST":
-            df.at[index, "AGENCES/ANTENNES"] = row["AGENCES/ ANTENNES REGION EST"]
-        elif row["REGION"] == "REGION NORD":
-            df.at[index, "AGENCES/ANTENNES"] = row["AGENCES/ANTENNES REGION NORD"]
-        elif row["REGION"] == "REGION OUEST":
-            df.at[index, "AGENCES/ANTENNES"] = row["AGENCES/ANTENNES REGION OUEST"]
-        elif row["REGION"] == "REGION SUD":
-            df.at[index, "AGENCES/ANTENNES"] = row["AGENCES/ANTENNES REGION SUD"]
+    cols = [
+        "AGENCES/ ANTENNES REGION SUD EST",
+        "AGENCES/ANTENNES REGION NORD EST",
+        "AGENCES/ANTENNES REGION NORD OUEST",
+        "AGENCES/ANTENNES REGION SUD OUEST",
+        "AGENCES/ANTENNES REGION IDF",
+    ]
+    # on prend la première valeur non-NaN parmi les 4
+    df["AGENCES/ANTENNES"] = df[cols].bfill(axis=1).iloc[:, 0]
+
     
     # Supprimer les colonnes inutiles
-    df = df.drop(columns=["AGENCES/ ANTENNES REGION EST", "AGENCES/ANTENNES REGION NORD", 
-                          "AGENCES/ANTENNES REGION OUEST", "AGENCES/ANTENNES REGION SUD"])
+    df = df.drop(columns=["AGENCES/ ANTENNES REGION SUD EST",
+        "AGENCES/ANTENNES REGION NORD EST",
+        "AGENCES/ANTENNES REGION NORD OUEST",
+        "AGENCES/ANTENNES REGION SUD OUEST",
+        "AGENCES/ANTENNES REGION IDF"])
 
     df["Nom"] = df["Nom"].str.upper()
     df["Nom"] = df["Nom"].str.replace("-", " ", regex=False)
@@ -281,5 +284,5 @@ df = preprocessing(df_combined)
 df = uniform_anomalies(df)
 
 # Sauvegarder le DataFrame dans un CSV
-df.to_csv("./data/verif_concordance.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
-print("Fichier 'verif_concordance.csv' généré avec succès.")
+df.to_csv("./data/controles_surete.csv", index=False, date_format="%Y-%m-%d %H:%M:%S")
+print("Fichier 'controles_surete.csv' généré avec succès.")
